@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  selftest:
+    name: selftest (${{ matrix.os }}, py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.9", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Tkinter (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y python3-tk
+
+      - name: Syntax check
+        run: python -c "import ast; ast.parse(open('mediamtx_relay_manager.py', encoding='utf-8').read())"
+
+      - name: Self-test (YAML transforms, never touches a real relay)
+        run: python mediamtx_relay_manager.py --selftest
+
+      - name: Tkinter import smoke test
+        run: python -c "import tkinter; print('tkinter OK, version', tkinter.TkVersion)"

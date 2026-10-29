@@ -14,7 +14,12 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        python-version: ["3.9", "3.12"]
+        # 3.10/3.12, not 3.8 (the README's stated floor): ubuntu-latest has
+        # migrated to a runner image with no prebuilt 3.8/3.9 available at
+        # all, which is a CI-infra limit, not a statement about what the
+        # code itself needs -- an actual 3.8/3.9 install on real hardware
+        # is untested here but not expected to behave differently.
+        python-version: ["3.10", "3.12"]
 
     steps:
       - uses: actions/checkout@v4

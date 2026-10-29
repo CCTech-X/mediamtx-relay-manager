@@ -167,10 +167,39 @@ def push_remote_file(cfg, remote_path, content, backup_tag):
     r = ssh_run(cfg, f"echo {b64} | base64 -d | sudo tee {remote_path} > /dev/null")
     if r.returncode != 0:
         raise RuntimeError(f"write failed (backup is at {bak}): {r.stderr.strip()}")
-    r = ssh_run(cfg, f"sudo python3 -c \"import yaml; yaml.safe_load(open('{remote_path}')); print('OK')\"")
+    # Dependency-free validation: confirm the write wasn't truncated (exact byte
+    # count) and the two expected top-level sections are still present -- grep
+    # and wc only, nothing beyond POSIX. An earlier version of this tool shelled
+    # out to `sudo python3 -c "import yaml; ..."` on the relay host, which
+    # silently requires python3 AND PyYAML there -- neither is a safe assumption
+    # (MediaMTX itself is a dependency-free static binary, so plenty of relay
+    # hosts won't have either). The failure mode was especially bad: the tee
+    # above had already succeeded, so a relay missing either dependency would
+    # report every write as FAILED and tell the operator to restore a backup
+    # over a change that had actually worked. Full YAML correctness is
+    # guaranteed locally instead, by add_unit_block/remove_unit_block being
+    # self-tested (verify_transforms / --selftest) before they ever run.
+    # sudo on every read here too -- the config file is typically root-only
+    # (0600), so an unprivileged read as the SSH user fails before sudo ever
+    # enters the picture. This bit twice: first without sudo at all, then
+    # with `sudo wc -c < path` -- which STILL fails, because `<` redirection
+    # is opened by the calling (unprivileged) shell to set up sudo's stdin,
+    # before sudo runs; the open happens as the wrong user regardless of
+    # where sudo sits in the command. `sudo cat path | wc -c` works because
+    # cat itself, running as root, is what touches the file; wc only ever
+    # sees an already-open pipe. Caught live both times: the actual writes
+    # below all succeeded, but this check reported every one of them as
+    # FAILED until both fixes were in.
+    expected_len = len(content.encode("utf-8"))
+    check_cmd = (
+        f'[ "$(sudo cat {remote_path} | wc -c)" = "{expected_len}" ] && '
+        f"sudo grep -q '^authInternalUsers:' {remote_path} && "
+        f"sudo grep -q '^paths:' {remote_path} && echo OK"
+    )
+    r = ssh_run(cfg, check_cmd)
     if r.returncode != 0 or "OK" not in r.stdout:
         raise RuntimeError(
-            f"new file failed YAML validation, restore from {bak} manually: {r.stderr.strip()}"
+            f"new file failed validation (size/structure mismatch), restore from {bak} manually: {r.stderr.strip()}"
         )
     return bak
 

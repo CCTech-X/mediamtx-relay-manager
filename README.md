@@ -36,12 +36,18 @@ comments and the units table.
 
 ## Requirements
 
+On your own machine, where you run this tool:
 - Python 3.8+ with Tkinter (bundled with the default python.org Windows
   installer; on Debian/Ubuntu: `sudo apt install python3-tk`)
 - An `ssh` client on `PATH` (Windows 10/11 ship one; on Windows 7, install
   any OpenSSH-compatible client, e.g. Git for Windows)
-- SSH access to a host running MediaMTX, with `sudo` rights to read and
-  write its config file
+
+On the relay host:
+- SSH access, with `sudo` rights to read and write the MediaMTX config file
+- `grep` and `wc` for the tool's own post-write validation -- standard on
+  any POSIX system, including a minimal container. **No Python is required
+  on the relay host.** MediaMTX itself is a dependency-free static binary,
+  and this tool doesn't assume anything else is installed alongside it.
 
 ## Usage
 
@@ -60,8 +66,9 @@ key inventory and an audit log. These are remembered in
 ## Design notes / why it's safe to point at a real relay
 
 - Every write is preceded by a timestamped backup of the config file on the
-  relay itself, and followed by a YAML-validity check before the change is
-  considered applied.
+  relay itself, and followed by a dependency-free structural check (exact
+  byte count plus the two expected section headers, `grep`/`wc` only, no
+  Python needed on the relay host) before the change is considered applied.
 - The core YAML transforms (`add_unit_block`, `remove_unit_block`,
   `list_units_detailed`) are pure functions with no side effects, covered
   by `verify_transforms()` (`--selftest`): an add-then-remove round trip
